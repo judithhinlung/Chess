@@ -1,0 +1,13 @@
+
+
+class Game_piece
+  def initialize(symbol)
+    @symbol = symbol
+  end
+
+  def to_s
+        @symbol.chr(Encoding::UTF_8)
+  end
+end
+
+puts 9812.chr(Encoding::UTF_8)
