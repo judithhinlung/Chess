@@ -6,3 +6,5 @@ end
 
 class MovedIntoCheckError < StandardError
 end
+class NoPieceAtLocationError < StandardError
+end

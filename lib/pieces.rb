@@ -1,4 +1,5 @@
 require_relative './node'
+require_relative './exceptions'
 
 class Piece 
   attr_reader :symbol, :color
@@ -27,45 +28,40 @@ class Piece
     get_moves(new_loc)
     if @valid_moves.include?(new_loc)
       @moved = true
-      row, col = @location
-      @board.grid[row][col] = nil
+      prev_loc = self.location
       row, col = new_loc
       @board.grid[row][col] = self
-      @location = new_loc
-    else
-      puts "Invalid move"
+      self.location = new_loc
+      row, col = prev_loc
+      @board.grid[row][col] = nil
     end
-  end
-  def remove(piece)
-    puts "Removing #{piece.color} #{piece.class}..."
-    row, col = piece.position
-    @board.grid[row][col] = nil
-    piece.location = nil
-  end
-  def out_of_bounds?(move)
-    return true if (move[0] < 0 || move[0] > 7 ||
-    move[1] < 0 || move[1] > 7)
-    return false
   end
   def get_moves(target=nil)
-    queue = []
-    queue.push(@location)
-    current = queue.first
-    until queue.empty?
-      possible_moves.each do |move|
+    moves = []
+    possible_moves.each do |move|
+      queue = []
+      queue.push(@location)
+      until queue.empty?
+        current = queue.shift
         next_pos = [(move[0] + current[0]), (move[1] + current[1])]
-        piece = @board.grid[next_pos[0], next_pos[1]]
-        target_piece = @board.grid[target[0], target[1]] unless target.nil?
-        if  !(out_of_bounds?(next_pos)) ||
-        (!target_piece.nil? && target_piece.color != self.color) ||
-        (piece.nil? && piece.color != self.color)
-        queue << move
-         end
+        row, col = next_pos
+        break if @board.out_of_bounds?(next_pos)
+        piece = @board.grid[row][col]
+        if (!target.nil? && next_pos[0] == target[0] && next_pos[1] == target[1])
+          if piece.nil? || (!piece.nil? &&  piece.color != self.color)
+            queue << next_pos
+            moves << next_pos
+          end
+          break
+        elsif piece.nil?
+          queue << next_pos
+         moves << next_pos
+        else 
+        break
+        end
       end
-    queue.shift
     end
-    @valid_moves = queue
-    return @valid_moves
+    @valid_moves = moves
   end
   def to_s
     return @symbol.encode('utf-8')
@@ -83,18 +79,14 @@ class Knight < Piece
     [[1, 2], [1, -2], [-1, 2], [-1, -2], [2, 1], [-2, 1], [2, -1], [-2, -1]]
   end
   def get_moves(target=nil)
-    queue = []
-    queue.push(@location)
-    current = queue.first
-    until queue.empty? do
-      possible_moves.each do |move|
-        next_pos = [(move[0] + current[0]), (move[1] + current[1])]
-        queue << move unless   out_of_bounds?(next_pos)
-      end
-    queue.shift
+    moves = []
+    current = self.location
+    possible_moves.each do |move|
+      next_pos = [(move[0] + current[0]), (move[1] + current[1])]
+      moves << next_pos unless @board.out_of_bounds?(next_pos)
     end
-    @valid_moves = queue
-    return @valid_moves
+
+    @valid_moves = moves
   end
 end
 
@@ -108,138 +100,94 @@ class King < Piece
   def possible_moves
     horrizontal + diagonal
   end 
+
   def move(new_loc)
-    distance = (new_loc[1] - @location[1])
-    if !@moved && (distance.abs == 2)
+    get_moves
+    if self.location[0] == new_loc[0] && (self.location[1] - new_loc[1]).abs == 2
       castle(new_loc)
     else
       super(new_loc)
     end
+    @moved = true
   end
-  def find_rook
-    @board.grid.flatten.select do |piece|
-      piece.position[0] == self.position[0] &&
+  def find_rook(new_loc)
+    rook = @board.grid.flatten.compact.select do |piece|
+      piece.location[0] == new_loc[0] &&
       piece.instance_of?(Rook) &&
       piece.color == self.color &&
-      !piece.moved
+      !piece.moved &&
+      (piece.location[1] - new_loc[1]).abs == 2
     end
-    return piece
+    return rook[0]
   end
-  def castle?
-    rook = find_rook
-    return false if rook.nil?
-    if self.position[1] < rook.position[1]
-      current = self.position
-      final = rook.position
-    elsif rook.position[1] < self.position[1]
-      current = rook.position
-      final = self.position
+  def can_castle?(rook)
+    if self.moved
+      puts "King has previously moved"
+      return false
+    end
+    if rook.nil?
+      puts "Rook has moved"
+      return false
+    end
+    if self.location[1] < rook.location[1]
+      current = self.location
+      final = rook.location
+    elsif rook.location[1] < self.location[1]
+      current = rook.location
+      final = self.location
     end    
-    while current <= final do
-      next_pos = [current[0], current[1 + 1]]
-      square = @board[current[0], current[1]]
+    until current[1] == final[1] - 1 do
+      next_pos = [current[0], current[1] + 1]
+      square = @board.grid[next_pos[0]][next_pos[1]]
       if !square.nil?
-        puts "Invalid move: square occupied."
+         puts "Square [#{current[0]}, #{current[1]}] is occupied"
         return false
       end
       if @board.attacked?(square, self.color)
-        puts "Invalid move: placing king in check!"
+        puts "Cannot place king in check"
         return false
       end
-      current = next_pos
+      current[1] += 1
     end
     return true
   end
   def castle(new_loc)
-    if castle?
-      rook = find_rook
-      if new_loc[1] < self.position[1] && rook.position[1] < self.position[1]
+    get_moves
+    rook = find_rook(new_loc)
+    if can_castle?(rook)
+      if new_loc[1] < self.location[1]
         self.location = new_loc
-        rook.location = [self.location[0], self.location[1 + 1]]
-      elsif self.location < rook.location && new_loc > self.location
+        rook.location[1] = self.location[1] + 1
+      elsif new_loc[1] > self.location[1]
         self.location = new_loc
-        rook.location = [self.location[0], self.location[1-1]]
+        rook.location[1] = self.location[1] - 1
       end
+      row, col = self.location
+      @board.grid[row][col] = self
+      row, col = rook.location
+      @board.grid[row][col] = self
+    else
+      raise InvalidMoveError.new("Cannot make a castling move")
     end
   end
   def get_moves(target=nil)
     queue = []
-    queue.push(@location)
-    current = queue.first
+    current = self.location
     possible_moves.each do |move|
       next_pos = [(move[0] + current[0]), (move[1] + current[1])]
-      queue << next_pos unless out_of_bounds?(next_pos)
+      queue << next_pos unless @board.out_of_bounds?(next_pos) || !@board.grid[next_pos[0]][next_pos[1]].nil?
     end
     @valid_moves = queue
+    if !self.moved
+      @valid_moves << [self.location[0], self.location[1] + 2]
+      @valid_moves << [self.location[0], self.location[1] - 2]
+    end
     return @valid_moves
   end
 end
 
-# Slider class for rook, queen, bishop who cannot leap over other pieces
-class Slider < Piece
-  def possible moves
-    horrizontal + diagonal
-  end
-  def move(new_loc)
-    target = find_path(@location, new_loc, possible_moves)
-    path = find_path(target)
-    display_path(path)
-    super(new_loc)
-  end
-  def find_path(location, new_loc, possible_moves)
-    row, col = @location
-    start = Node.new(row, col)
-    target = Node.new(new_loc[0], new_loc[1])
-    queue = []
-    queue.push(start)
-    until queue.empty? do
-      current = queue.first
-      if current.equal?(target)
-        return current
-      end
-      moves = find_moves(possible_moves, current)
-      moves.each do |move|
-        move.next_node = current
-        queue << move
-      end
-      queue.shift
-    end
-  end
-  def find_moves(moves, node)
-    nodes = []
-    moves.each do |move|
-      move[0] = x
-      move[1] = y    
-      node = Node.new(current.x + x, current.y + y)
-      nodes << node
-    end
-    nodes.reject do |node|
-      node.x < 0 || node.x > 7 ||
-      node.y < 0 || node.y > 7
-    end
-    nodes.reject do |node|
-      x = node.x
-      y = node.y
-      @board[x][y].nil?
-    end
-    return nodes
-  end
-  def find_path(node)
-    path = []
-    until node.next_node.nil? do
-      path << node
-      node = node.next_node
-    end
-    return path.reverse
-  end
-  def display_path(path)
-    path.each do |node|
-      puts "[#{node.x}], [#{node.y}]"
-    end
-  end
-end
 
-class Queen < Slider
+class Queen < Piece
   def initialize(color, location, board)
     super(color, location, board)
   end
@@ -251,7 +199,7 @@ class Queen < Slider
   end
 end
 
-class Rook < Slider
+class Rook < Piece
   def initialize(color, location, board)
     super(color, location, board)
     if @color == "w"
@@ -265,7 +213,7 @@ class Rook < Slider
   end
 end
 
-class Bishop < Slider
+class Bishop < Piece
   def initialize(color, location, board)
     super(color, location, board)
     if @color == "w"
@@ -295,33 +243,32 @@ class Pawn < Piece
   def possible_moves
     [[1, 0], [1, 1], [1, -1], [2, 0]]
   end
-  def get_moves
+  def get_moves(target=nil)
     next_move_free = false
-    row, col = self.position
+    row, col = self.location
+    moves = []
     possible_moves.each_with_index do |move, index|
-      target_piece = @board.grid[(row + move[0])][col + (move[1] * @direction)]
+      target = [(row + (move[0]*@direction)), (col + move[1])]
+      target_piece = @board.grid[(row + (move[0]*@direction))][(col + move[1])]
       case index
       when 0
         if target_piece.nil?
           next_move_free = true
-          moves << move
+          moves << target
         end
       when possible_moves.length - 1
-        if self.moved && target_piece.color != slef.color && next_move_free
-          moves << move
+        if !self.moved && target_piece.nil? && next_move_free
+          moves << target 
         end
       else
-        moves << move if !current_piece.nil? && piece.color != self.color
+        moves << target if !target_piece.nil? && target_piece.color != self.color
       end
     end
-    return moves
+    moves = moves.reject { |move| @board.out_of_bounds?(move) }
+    @valid_moves = moves
   end
   def move(new_loc)
-    moves = get_moves
-    if moves.include?(new_loc)
-      @en_passant = true if (self.location[0] == new_loc[0]) && (self.location[1] - new_loc[1]).abs == 2
-      self.location = new_loc
-    end
+    @en_passant = true if (self.location[0] == new_loc[0]) && ((self.location[1] - new_loc[1]).abs == 2)
+    super(new_loc)
   end
 end
-

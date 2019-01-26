@@ -1,6 +1,7 @@
 require_relative './node'
 require_relative './pieces'
 require_relative './board'
+require_relative './exceptions'
 require 'yaml'
 
 class Chess
@@ -16,33 +17,37 @@ class Chess
     return next_player
   end
   def make_one_move
-    puts "Enter your move: "
-    input = gets.chomp
-    case input
-      when "quit", "exit"
-        game_on = false
-        exit_game
-      when "save"
-        save_file
-      when /^([a-h][1-8],?\s?[a-h][1-8])$/
-        begin
-          start, target = parse_move(input)
+    begin
+      puts @board
+      puts "Enter your move: "
+      input = gets.chomp
+      case input
+        when "quit", "exit"
+          game_on = false
+          exit_game
+        when "save"
+          save_file
+        when /^([a-h][1-8],?\s?[a-h][1-8])$/
+          start, target = input.split()
+          start = parse_move(input[0])
+          target = parse_move(input[1])
           puts start, target
           @board.make_move(start, target)
-        rescue InvalidMoveError => e
-          puts e.message
-          retry
-        rescue WrongColorError => e
-          puts e.message
-          retry
-       rescue MovedIntoCheckError => e
-         puts e.message
-          retry
-        end
-      else
-        puts "Invalid input."
-        puts "Enter your move in the format \'a2, c3\'"
-        make_one_move
+    rescue NoPieceAtLocationError => e
+      puts e.message
+      puts "Available moves are: "
+      piece.get_moves(target)
+      piece.moves.each { |move| puts move }
+      retry
+    rescue WrongColorError => e
+      puts e.message
+      retry
+    rescue MovedIntoCheckError => e
+      puts e.message
+      retry
+    rescue InvalidMoveError => e
+      puts e.message
+      retry
     end
   end
   def parse_move(str)
@@ -169,7 +174,6 @@ def play_again?
   else
     play_again?
   end
+
 end
-
-
 

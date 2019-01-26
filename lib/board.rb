@@ -9,30 +9,31 @@ class Board
     setup_board if @grid.nil?
   end
   def setup_board
-    @grid = Array.new(8) {Array.new(8)}
+    grid = Array.new(8) {Array.new(8)}
     8.times do |col|
       case col
       when 0, 7
-        @grid[0][col] = Rook.new("w", [0, col], self)
-        @grid[7][col] = Rook.new("b", [7, col], self)
+        grid[0][col] = Rook.new("w", [0, col], self)
+        grid[7][col] = Rook.new("b", [7, col], self)
       when 1, 6
-        @grid[0][col] = Knight.new("w", [0, col], self)
-        @grid[7][col] = Knight.new("b", [7, col], self)
+        grid[0][col] = Knight.new("w", [0, col], self)
+        grid[7][col] = Knight.new("b", [7, col], self)
       when 2, 5
-        @grid[0][col] = Bishop.new("w", [0, col], self)
-        @grid[7][col] = Bishop.new("b", [7, col], self)
+        grid[0][col] = Bishop.new("w", [0, col], self)
+        grid[7][col] = Bishop.new("b", [7, col], self)
       when 3
-        @grid[0][col] = Queen.new("w", [0, col], self)
-        @grid[7][col] = Queen.new("b", [7, col], self)
+        grid[0][col] = Queen.new("w", [0, col], self)
+        grid[7][col] = Queen.new("b", [7, col], self)
       when 4
-        @grid[0][col] = King.new("w", [0, col], self)
-        @grid[7][col] = King.new("b", [7, col], self)
+        grid[0][col] = King.new("w", [0, col], self)
+        grid[7][col] = King.new("b", [7, col], self)
       end
     end
     8.times do |col|
-      @grid[1][col] = Pawn.new("w", [1, col], self)
-      @grid[6][col] = Pawn.new("b", [6, col], self)
+      grid[1][col] = Pawn.new("w", [1, col], self)
+      grid[6][col] = Pawn.new("b", [6, col], self)
     end
+    @grid = grid
   end
   def alt_color(color)
   color == "w" ? "b" : "w"
@@ -41,11 +42,16 @@ class Board
     begin
       row, col = start
       piece = @grid[row][col]
+      raise NoPieceAtLocationError.new("No piece at current location") if piece.nil?
+
       if piece.color != self.color
         raise WrongColorError.new("Please select your own color::#{self.color}")
       end
-      if piece.moves.include?(target)
-      # TODO: moved into check
+      if moved_into_check?(piece, target)
+        raise MovedIntoCheckError.new("Cannot make a move that puts king in check")
+      end
+      piece.get_moves
+      if piece.valid_moves.include?(target)
         capture(piece, target)
         piece.move(target)
       else 
@@ -56,42 +62,52 @@ class Board
   def capture(piece, target)
     row, col = target
     return if target.nil?
-    if piece.instanceof(Pawn) && piece.location == target[row][col - 1]
+    if piece.instance_of?(Pawn) && piece.location == target[row][col - 1]
       target_piece = @grid[row][col-1] if en_passant?(@grid[row][col])
       target_piece = @grid[row][col+1] if en_passant?(@grid[row][col+1])
     else
       target_piece = @grid[row][col]
     end
-    piece.remove(target)
+    remove(target)
   end
   def en_passant?(piece)
-    return true if !piece.nil? && piece.instanceof(Pawn) && piece.en_passant
+    return true if !piece.nil? && piece.instance_of?(Pawn) && piece.en_passant
+    return false
+  end
+  def remove(piece)
+    row, col = piece.location
+    @grid[row][col] = nil
+    piece.location = nil
+  end
+  def out_of_bounds?(move)
+    return true if (move[0] < 0 || move[0] > 7 ||
+    move[1] < 0 || move[1] > 7)
     return false
   end
   def attacked?(square, color)
-  attacked = false
-    opponents = @grid.flatten.select do |piece| 
-      piece.color != color
+    alt = alt_color(color)
+    is_attacked = false
+    opponents = @grid.flatten.compact.select do |piece| 
+      piece.color == alt
     end
     opponents.each do |piece|
       piece.get_moves
-      moves = piece.moves
+      moves = piece.valid_moves
       if moves.include?(square)
-        puts "#{[square[0],square[1]]} is under attack by a #{piece.color} #{piece.class.name}."
-     attacked = true
+        is_attacked = true
       end
     end
-    return attacked
+    return is_attacked
   end
   def find_king(color)
-    king = @board.select do |piece| 
-      piece.color == color && piece.instanceof(King)
-    end
+    king = @grid.flatten.select { |piece|
+!piece.nil? && piece.color == color && piece.instance_of?(King) }[0]
+
     return king
   end
   def check?(color)
     king = find_king(color)
-    return attacked?(king.position, color)
+    return attacked?(king.location, color)
   end
   def check_mate?(color)
     if check?(color)
@@ -116,11 +132,11 @@ class Board
     return new_board
   end
   def moved_into_check?(piece, target)
-    row, col = piece.position
+    row, col = piece.location
     tmp_board = copy_board
-    tmp_piece = tmp_board[row][col]
-    move(tmp_piece, target)
-    return tmp_board.check?(@color)
+    tmp_piece = tmp_board.grid[row][col]
+    tmp_piece.move(target)
+    return tmp_board.check?(piece.color)
   end
   def to_s
     puts "   " + "A B C D E F G H".downcase
@@ -139,6 +155,3 @@ class Board
     puts "   " + "A B C D E F G H".downcase
   end
 end
-
-
-
